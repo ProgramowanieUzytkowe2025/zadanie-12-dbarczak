@@ -1,34 +1,99 @@
 import './AppCalculator.css';
-import { useState } from 'react';
+import { useState, useEffect, useReducer } from "react";
 import { AppButton } from './AppButton';
 import { AppCalculationHistory } from './AppCalculationHistory';
+import { useKalkulator } from "./useKalkulator";
+const STORAGE_KEY = 'kalkulator_historia';
+
+function statusReducer(state, action) {
+  switch (action.type) {
+    case "INIT":
+      return "Brak";
+    case "ZMIEN_A":
+      return "Zmodyfikowano wartość liczby A";
+    case "ZMIEN_B":
+      return "Zmodyfikowano wartość liczby B";
+    case "OBLICZ":
+      return "Wykonano obliczenia";
+    case "PRZYWRÓĆ":
+      return "Przywrócono historyczny stan";
+    default:
+      return state;
+  }
+}
 
 export function AppCalculator() {
     const [liczbaA, setLiczbaA] = useState(null);
     const [liczbaB, setLiczbaB] = useState(null);
     const [wynik, setWynik] = useState(null);
     const [historia, setHistoria] = useState([]);
+    const [porownanie, setPorownanie] = useState('');
 
-    function dodaj() {
-        aktualizujHistorie('+', liczbaA + liczbaB);
+    const [ostatniaCzynnosc, dispatch] = useReducer(statusReducer, "Brak");
+
+    const { dodaj, odejmij, pomnoz, podziel } = useKalkulator({
+        liczbaA,
+        liczbaB,
+        historia,
+        setHistoria,
+        setWynik,
+    });
+
+    function onDodaj() {
+        dodaj();
+        dispatch({ type: "OBLICZ" });
     }
 
-    function odejmij() {
-        aktualizujHistorie('-', liczbaA - liczbaB);
+    function onOdejmij() {
+        odejmij();
+        dispatch({ type: "OBLICZ" });
     }
 
-    function pomnoz() {
-        aktualizujHistorie('*', liczbaA * liczbaB);
+    function onPomnoz() {
+        pomnoz();
+        dispatch({ type: "OBLICZ" });
     }
 
-    function podziel() {
-        if(liczbaB !== 0) {
-            aktualizujHistorie('/', liczbaA / liczbaB);
+    function onPodziel() {
+        podziel();
+        dispatch({ type: "OBLICZ" });
+    }
+    
+    useEffect(() => {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+
+        try {
+            const zapisanaHistoria = JSON.parse(raw);
+
+            if (Array.isArray(zapisanaHistoria)) {
+                // eslint-disable-next-line react-hooks/set-state-in-effect
+                setHistoria(zapisanaHistoria);
+
+                if (zapisanaHistoria.length > 0) {
+                    const last = zapisanaHistoria[zapisanaHistoria.length - 1];
+                    setLiczbaA(last.a);
+                    setLiczbaB(last.b);
+                    setWynik(last.wynik);
+                }
+            }
+        } catch {
+            sessionStorage.removeItem(STORAGE_KEY);
         }
-    }
+    }, []);
+
+    useEffect(() => {
+        if (historia.length > 0) {
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(historia));
+        } else {
+            sessionStorage.removeItem(STORAGE_KEY);
+        }
+    }, [historia]);
+
 
     function liczbaAOnChange(value) {
         setLiczbaA(parsujLiczbe(value));
+        dispatch({ type: "ZMIEN_A" });
     }
 
     function parsujLiczbe(value) {
@@ -42,6 +107,7 @@ export function AppCalculator() {
 
     function liczbaBOnChange(value) {
         setLiczbaB(parsujLiczbe(value));
+        dispatch({ type: "ZMIEN_B" });
     }
 
     function onAppCalculationHistoryClick(index) {
@@ -50,32 +116,26 @@ export function AppCalculator() {
         setLiczbaA(historia[index].a);
         setLiczbaB(historia[index].b);
         setWynik(historia[index].wynik);
+        dispatch({ type: "PRZYWRÓĆ" });
     }
 
-    function aktualizujHistorie(operation, wynik) {
-        const nowaHistoria = [...historia, { a: liczbaA, b: liczbaB, operation: operation, wynik: wynik }];
-        setHistoria(nowaHistoria);
-        setWynik(wynik);
-    }
+    useEffect(() => {
+        if (liczbaA == null || liczbaB == null) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setPorownanie('');
+        } else if (liczbaA === liczbaB) {
+            setPorownanie('Liczba A jest równa liczbie B.');
+        } else if (liczbaA > liczbaB) {
+            setPorownanie('Liczba A jest większa od liczby B.');
+        } else {
+            setPorownanie('Liczba B jest większa od liczby A.aaa');
+        }
+    }, [liczbaA, liczbaB]);
 
-    let porownanie;
+
     let zablokujPrzyciski = liczbaA == null || liczbaB == null;
     let zablokujDzielenie = zablokujPrzyciski || liczbaB === 0;
 
-    if(zablokujPrzyciski) 
-    {
-        porownanie = '';
-    } 
-    else 
-    {
-        if(liczbaA === liczbaB) {
-            porownanie = 'Liczba A jest równa liczbie B.';
-        } else if(liczbaA > liczbaB) {
-            porownanie = 'Liczba A jest większa od liczby B.';
-        } else {
-            porownanie = 'Liczba B jest większa od liczby A.';
-        }
-    }
 
     return (
     <div className='app-calculator'>
@@ -83,7 +143,12 @@ export function AppCalculator() {
             <label>Wynik: </label>
             <span>{wynik}</span>
         </div>
+        <hr />
 
+        <div className="app-calculator-pole">
+             <label>Ostatnia czynność: </label>
+            <span>{ostatniaCzynnosc}</span>
+        </div>
         <hr />
 
         <div className='app-calculator-pole'>
@@ -105,10 +170,10 @@ export function AppCalculator() {
         <hr />
 
         <div className='app-calculator-przyciski'>
-            <AppButton disabled={zablokujPrzyciski} title="+" onClick={() => dodaj()}/>
-            <AppButton disabled={zablokujPrzyciski} title="-" onClick={() => odejmij()}/>
-            <AppButton disabled={zablokujPrzyciski} title="*" onClick={() => pomnoz()}/>
-            <AppButton disabled={zablokujDzielenie} title="/" onClick={() => podziel()}/>
+            <AppButton disabled={zablokujPrzyciski} title="+" onClick={onDodaj}/>
+            <AppButton disabled={zablokujPrzyciski} title="-" onClick={onOdejmij}/>
+            <AppButton disabled={zablokujPrzyciski} title="*" onClick={onPomnoz}/>
+            <AppButton disabled={zablokujDzielenie} title="/" onClick={onPodziel}/>
         </div>
 
         <hr />
